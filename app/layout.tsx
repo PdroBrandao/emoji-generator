@@ -1,6 +1,17 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import {
+  ClerkProvider,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from '@clerk/nextjs'
+import Header from "@/components/headers";
+import { useEffect } from 'react';
+import { useUser } from '@clerk/nextjs';
+import { createOrGetUser } from '../lib/auth';
+import UserInitializer from "@/app/components/UserInitializer";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -20,16 +31,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        >
+          <Header />
+          <main>{children}</main>
+          <UserInitializer />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

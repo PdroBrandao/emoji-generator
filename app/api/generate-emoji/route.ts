@@ -1,9 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import Replicate from "replicate";
+import { createClient } from '@supabase/supabase-js';
+import { getAuth } from '@clerk/nextjs/server';
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
+
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 async function streamToBase64(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
@@ -19,11 +23,16 @@ async function streamToBase64(stream: ReadableStream): Promise<string> {
   return buffer.toString('base64');
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const { userId } = await getAuth(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  }
+
   const { prompt } = await request.json();
 
   if (!prompt) {
-    return NextResponse.json({ message: 'Prompt is required' }, { status: 400 });
+    return NextResponse.json({ message: 'Prompt é obrigatório' }, { status: 400 });
   }
 
   try {
@@ -37,19 +46,50 @@ export async function POST(request: Request) {
       }
     );
 
-    console.log("API Response:", output);
-
     if (Array.isArray(output) && output.every(item => item instanceof ReadableStream)) {
       const base64Images = await Promise.all(output.map(streamToBase64));
-      const imageUrls = base64Images.map(base64 => `data:image/png;base64,${base64}`);
-      console.log("Processed Image URLs:", imageUrls);
-      return NextResponse.json({ emojis: imageUrls });
+      
+      for (let i = 0; i < base64Images.length; i++) {
+        const base64 = base64Images[i];
+        const buffer = Buffer.from(base64, 'base64');
+        const fileName = `${userId}_${Date.now()}_${i}.png`;
+
+        // Upload para o bucket do Supabase
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('emojis')
+          .upload(fileName, buffer, { contentType: 'image/png' });
+
+        if (uploadError) {
+          console.error('Erro ao fazer upload do emoji:', uploadError);
+          continue;
+        }
+
+        // Obter URL pública
+        const { data: publicUrlData } = supabase.storage
+          .from('emojis')
+          .getPublicUrl(fileName);
+
+        // Inserir na tabela emojis
+        const { error: insertError } = await supabase
+          .from('emojis')
+          .insert({
+            image_url: publicUrlData.publicUrl,
+            prompt: prompt,
+            creator_user_id: userId
+          });
+
+        if (insertError) {
+          console.error('Erro ao inserir emoji na tabela:', insertError);
+        }
+      }
+
+      return NextResponse.json({ success: true });
     } else {
-      console.error("Unexpected output format:", output);
-      return NextResponse.json({ message: 'Unexpected output format from Replicate API' }, { status: 500 });
+      console.error("Formato de saída inesperado:", output);
+      return NextResponse.json({ message: 'Formato de saída inesperado da API Replicate' }, { status: 500 });
     }
   } catch (error) {
-    console.error('Error generating emojis:', error);
-    return NextResponse.json({ message: 'Error generating emojis' }, { status: 500 });
+    console.error('Erro ao gerar emojis:', error);
+    return NextResponse.json({ message: 'Erro ao gerar emojis' }, { status: 500 });
   }
 }
