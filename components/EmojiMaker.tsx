@@ -29,7 +29,12 @@ export default function EmojiMaker() {
         throw new Error('Falha ao buscar emojis');
       }
       const data = await response.json();
-      const formattedEmojis = data.emojis.map((emoji: any) => ({
+      const formattedEmojis = data.emojis.map((emoji: {
+        id: number;
+        image_url: string;
+        likes_count: number;
+        prompt: string;
+      }) => ({
         id: emoji.id,
         src: emoji.image_url,
         likes: emoji.likes_count,
@@ -144,7 +149,7 @@ export default function EmojiMaker() {
       
       {currentEmoji && (
         <div className="mb-6 text-center">
-          <h2 className="text-xl font-semibold mb-2">Emoji gerado para: "{currentEmoji.prompt}"</h2>
+          <h2 className="text-xl font-semibold mb-2">Emoji gerado para: &ldquo;{currentEmoji.prompt}&rdquo;</h2>
           <Image
             src={currentEmoji.src}
             alt={`Emoji gerado para ${currentEmoji.prompt}`}

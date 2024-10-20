@@ -3,14 +3,8 @@ import localFont from "next/font/local";
 import "./globals.css";
 import {
   ClerkProvider,
-  SignedIn,
-  SignedOut,
-  UserButton,
 } from '@clerk/nextjs'
 import Header from "@/components/headers";
-import { useEffect } from 'react';
-import { useUser } from '@clerk/nextjs';
-import { createOrGetUser } from '../lib/auth';
 import UserInitializer from "@/app/components/UserInitializer";
 
 const geistSans = localFont({
@@ -48,3 +42,4 @@ export default function RootLayout({
     </ClerkProvider>
   );
 }
+
