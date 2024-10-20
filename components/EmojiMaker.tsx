@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 
 type GeneratedEmoji = {
+  id: number;
   src: string;
   likes: number;
   prompt: string;
@@ -15,6 +16,31 @@ export default function EmojiMaker() {
   const [generatedEmojis, setGeneratedEmojis] = useState<GeneratedEmoji[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentEmoji, setCurrentEmoji] = useState<GeneratedEmoji | null>(null);
+  const [allEmojis, setAllEmojis] = useState<GeneratedEmoji[]>([]);
+
+  useEffect(() => {
+    fetchAllEmojis();
+  }, []);
+
+  const fetchAllEmojis = async () => {
+    try {
+      const response = await fetch('/api/emojis');
+      if (!response.ok) {
+        throw new Error('Falha ao buscar emojis');
+      }
+      const data = await response.json();
+      const formattedEmojis = data.emojis.map((emoji: any) => ({
+        id: emoji.id,
+        src: emoji.image_url,
+        likes: emoji.likes_count,
+        prompt: emoji.prompt,
+        isLiked: false, // Você pode implementar a lógica de verificação de curtida aqui
+      }));
+      setAllEmojis(formattedEmojis);
+    } catch (error) {
+      console.error('Erro ao buscar emojis:', error);
+    }
+  };
 
   const handleGenerate = async () => {
     setIsLoading(true);
@@ -34,13 +60,14 @@ export default function EmojiMaker() {
       const data = await response.json();
       console.log("Resposta da API:", data);
 
-      if (Array.isArray(data.emojis) && data.emojis.length > 0) {
-        const newEmoji = { src: data.emojis[0], likes: 0, prompt, isLiked: false };
+      if (data.success && Array.isArray(data.emojis) && data.emojis.length > 0) {
+        const newEmoji = { id: Date.now(), src: data.emojis[0], likes: 0, prompt, isLiked: false };
         setCurrentEmoji(newEmoji);
         setGeneratedEmojis(prevEmojis => [newEmoji, ...prevEmojis]);
+        setAllEmojis(prevEmojis => [newEmoji, ...prevEmojis]);
       } else {
-        console.error("Formato de dados inesperado:", data);
-        throw new Error('Formato de dados inesperado da API');
+        console.error("Formato de dados inesperado ou erro na API:", data);
+        throw new Error(data.message || 'Falha ao gerar emojis');
       }
     } catch (error) {
       console.error('Erro ao gerar emojis:', error);
@@ -50,19 +77,37 @@ export default function EmojiMaker() {
     }
   };
 
-  const handleLike = (index: number) => {
-    setGeneratedEmojis(prevEmojis => 
-      prevEmojis.map((emoji, i) => {
-        if (i === index) {
-          return { 
-            ...emoji, 
-            likes: emoji.isLiked ? emoji.likes - 1 : emoji.likes + 1, 
-            isLiked: !emoji.isLiked 
-          };
-        }
-        return emoji;
-      })
-    );
+  const handleLike = async (emojiId: number) => {
+    const emoji = allEmojis.find(e => e.id === emojiId);
+    if (!emoji) return;
+
+    const newIsLiked = !emoji.isLiked;
+    try {
+      const response = await fetch('/api/emojis/like', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emojiId, like: newIsLiked }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha ao processar curtida');
+      }
+
+      const data = await response.json();
+
+      setAllEmojis(prevEmojis => 
+        prevEmojis.map(e => 
+          e.id === emojiId 
+            ? { ...e, isLiked: newIsLiked, likes: data.likes_count } 
+            : e
+        )
+      );
+    } catch (error) {
+      console.error('Erro ao curtir emoji:', error);
+      alert('Falha ao curtir emoji. Por favor, tente novamente.');
+    }
   };
 
   const handleDownload = (src: string, prompt: string) => {
@@ -130,7 +175,44 @@ export default function EmojiMaker() {
             <p className="text-sm text-gray-600 mt-2 text-center">{emoji.prompt}</p>
             <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
               <button 
-                onClick={() => handleLike(index)} 
+                onClick={() => handleLike(emoji.id)} 
+                className={`rounded-full p-2 mx-1 transition-colors duration-300 ${
+                  emoji.isLiked ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-white text-black hover:bg-gray-200'
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill={emoji.isLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleDownload(emoji.src, emoji.prompt)}
+                className="bg-white text-black rounded-full p-2 mx-1 hover:bg-gray-200"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mt-2 text-center">{emoji.likes} curtidas</p>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="text-2xl font-bold mb-4">Todos os Emojis</h2>
+      <div className="grid grid-cols-2 gap-4">
+        {allEmojis.map((emoji) => (
+          <div key={emoji.id} className="relative group border border-gray-200 rounded-md p-4">
+            <Image
+              src={emoji.src}
+              alt={`Emoji ${emoji.id}`}
+              width={100}
+              height={100}
+              className="w-full h-auto"
+            />
+            <p className="text-sm text-gray-600 mt-2 text-center">{emoji.prompt}</p>
+            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <button 
+                onClick={() => handleLike(emoji.id)} 
                 className={`rounded-full p-2 mx-1 transition-colors duration-300 ${
                   emoji.isLiked ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-white text-black hover:bg-gray-200'
                 }`}
